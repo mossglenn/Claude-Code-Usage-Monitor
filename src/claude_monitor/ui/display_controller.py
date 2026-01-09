@@ -334,8 +334,8 @@ class DisplayController:
             messages_limit = processed_data.get("messages_limit_p90", 0)
             messages_percent = (messages_used / messages_limit * 100) if messages_limit > 0 else 0
 
-            burn_rate = processed_data.get("burn_rate", {})
-            token_burn_rate = burn_rate.get("tokens_per_minute", 0) if burn_rate else 0
+            # burn_rate is a float (tokens per minute) from calculate_hourly_burn_rate()
+            token_burn_rate = processed_data.get("burn_rate", 0.0)
 
             # Calculate reset time
             reset_hour = getattr(args, 'reset_hour', None) or 0
@@ -379,6 +379,7 @@ class DisplayController:
             state_file.write_text(json.dumps(state, indent=2))
 
         except Exception as e:
+            logger = logging.getLogger(__name__)
             logger.error(f"Failed to write state file: {e}", exc_info=True)
 
     def _process_active_session_data(
