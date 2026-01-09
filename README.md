@@ -198,6 +198,7 @@ claude-monitor --help
 | --log-level | string | INFO | Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL |
 | --log-file | path | None | Log file path |
 | --debug | flag | False | Enable debug logging |
+| --write-state | flag | False | Write current state to JSON file for external tools (see [STATE_FILE.md](STATE_FILE.md)) |
 | --version, -v | flag | False | Show version information |
 | --clear | flag | False | Clear saved configuration |
 
@@ -231,6 +232,7 @@ The monitor automatically saves your preferences to avoid re-specifying them on 
 - Refresh rates (--refresh-rate, --refresh-per-second)
 - Reset hour (--reset-hour)
 - Custom token limits (--custom-limit-tokens)
+- State file writing (--write-state)
 
 **Configuration Location:** ~/.claude-monitor/last_used.json
 
@@ -693,6 +695,41 @@ claude-monitor --view daily --timezone America/New_York
 - **Daily**: Analyze daily consumption patterns and identify peak usage days
 - **Monthly**: Long-term trend analysis and monthly budget planning
 
+#### 🔌 External Tool Integration
+
+**Scenario**: Building VS Code extensions, status bar widgets, or other tools that need real-time usage data.
+
+```bash
+# Enable state file writing for external consumption
+claude-monitor --write-state
+
+# With custom refresh rate (updates every 5 seconds)
+claude-monitor --write-state --refresh-rate 5
+
+# State file persists - run once and it remembers
+claude-monitor --write-state  # Enable once
+claude-monitor                # Runs with --write-state enabled
+```
+
+**State File Location**: `~/.claude-monitor/reports/current.json`
+
+**What You Get**:
+
+- Real-time messages, tokens, and cost usage
+- Limit tracking (used/limit/percent)
+- Reset countdown timer
+- Token burn rate
+- JSON format for easy parsing
+
+**Perfect For**:
+
+- VS Code status bar extensions
+- Desktop notification systems
+- Custom dashboards and widgets
+- Integration with other dev tools
+
+📖 **Full Documentation**: See [STATE_FILE.md](STATE_FILE.md) for complete JSON schema, TypeScript/Python types, and integration examples.
+
 
 ### Plan Selection Strategies
 
@@ -1153,6 +1190,7 @@ Whether you need help with setup, have feature requests, found a bug, or want to
 
 ## 📚 Additional Documentation
 
+- **[State File Documentation](STATE_FILE.md)** - JSON state file format for external integrations (VS Code extensions, status bars, etc.)
 - **[Development Roadmap](DEVELOPMENT.md)** - ML features, PyPI package, Docker plans
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute, development guidelines
 - **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
