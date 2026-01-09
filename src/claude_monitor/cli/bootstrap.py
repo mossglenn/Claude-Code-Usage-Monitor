@@ -50,6 +50,9 @@ def setup_environment() -> None:
     os.environ.setdefault(
         "CLAUDE_MONITOR_CACHE_DIR", str(Path.home() / ".claude-monitor" / "cache")
     )
+    os.environ.setdefault(
+        "CLAUDE_MONITOR_REPORT_DIR", str(Path.home() / ".claude-monitor" / "reports")
+    )
 
 
 def init_timezone(timezone: str = "Europe/Warsaw") -> TimezoneHandler:

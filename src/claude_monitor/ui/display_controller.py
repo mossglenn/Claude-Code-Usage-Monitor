@@ -3,7 +3,9 @@
 Orchestrates UI components and coordinates display updates.
 """
 
+import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -48,6 +50,7 @@ class DisplayController:
         config_dir = Path.home() / ".claude" / "config"
         config_dir.mkdir(parents=True, exist_ok=True)
         self.notification_manager = NotificationManager(config_dir)
+        self.write_state_enabled = False
 
     def _extract_session_data(self, active_block: Dict[str, Any]) -> Dict[str, Any]:
         """Extract basic session data from active block."""
@@ -299,7 +302,84 @@ class DisplayController:
             )
             return self.buffer_manager.create_screen_renderable(screen_buffer)
 
+        # Write state file if enabled
+        if self.write_state_enabled:
+            self._write_state_file(processed_data, args)
+
         return self.buffer_manager.create_screen_renderable(screen_buffer)
+
+    def _write_state_file(self, processed_data: Dict[str, Any], args: Any) -> None:
+        """Write current state to JSON file for external consumers.
+
+        Args:
+            processed_data: Processed session data from _process_active_session_data
+            args: Command line arguments
+        """
+        try:
+            import json
+            import os
+            from datetime import timedelta
+            from pathlib import Path as PathLib
+
+            # Extract values from processed_data
+            tokens_used = processed_data.get("tokens_used", 0)
+            token_limit = processed_data.get("token_limit", 0)
+            tokens_percent = processed_data.get("usage_percentage", 0)
+
+            cost_used = processed_data.get("session_cost", 0.0)
+            cost_limit = processed_data.get("cost_limit_p90", 0.0)
+            cost_percent = (cost_used / cost_limit * 100) if cost_limit > 0 else 0
+
+            messages_used = processed_data.get("sent_messages", 0)
+            messages_limit = processed_data.get("messages_limit_p90", 0)
+            messages_percent = (messages_used / messages_limit * 100) if messages_limit > 0 else 0
+
+            burn_rate = processed_data.get("burn_rate", {})
+            token_burn_rate = burn_rate.get("tokens_per_minute", 0) if burn_rate else 0
+
+            # Calculate reset time
+            reset_hour = getattr(args, 'reset_hour', None) or 0
+            current_time = datetime.now(pytz.UTC)
+            reset_time = current_time.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+            if current_time.hour >= reset_hour:
+                reset_time += timedelta(days=1)
+            reset_seconds = int((reset_time - current_time).total_seconds())
+
+            # Build state dictionary
+            state = {
+                'messages': {
+                    'used': messages_used,
+                    'limit': messages_limit,
+                    'percent': round(messages_percent, 2)
+                },
+                'tokens': {
+                    'used': tokens_used,
+                    'limit': token_limit,
+                    'percent': round(tokens_percent, 2)
+                },
+                'cost': {
+                    'used': cost_used,
+                    'limit': cost_limit,
+                    'percent': round(cost_percent, 2)
+                },
+                'reset': {
+                    'timestamp': reset_time.isoformat(),
+                    'secondsRemaining': reset_seconds,
+                    'formattedTime': reset_time.strftime('%I:%M %p')
+                },
+                'burnRate': {
+                    'tokens': round(token_burn_rate, 2),
+                    'messages': 0
+                },
+                'lastUpdate': datetime.now().isoformat()
+            }
+
+            # Write to file
+            state_file = PathLib(os.environ["CLAUDE_MONITOR_REPORT_DIR"]) / 'current.json'
+            state_file.write_text(json.dumps(state, indent=2))
+
+        except Exception as e:
+            logger.error(f"Failed to write state file: {e}", exc_info=True)
 
     def _process_active_session_data(
         self,

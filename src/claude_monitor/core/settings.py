@@ -34,6 +34,7 @@ class LastUsedParams:
                 "refresh_rate": settings.refresh_rate,
                 "reset_hour": settings.reset_hour,
                 "view": settings.view,
+                "write_state": settings.write_state,
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -169,6 +170,11 @@ class Settings(BaseSettings):
     version: bool = Field(default=False, description="Show version information")
 
     clear: bool = Field(default=False, description="Clear saved configuration")
+
+    write_state: bool = Field(
+        default=False,
+        description="Write current state to reports/current.json for external consumers",
+    )
 
     @field_validator("plan", mode="before")
     @classmethod
@@ -350,5 +356,6 @@ class Settings(BaseSettings):
         args.log_level = self.log_level
         args.log_file = str(self.log_file) if self.log_file else None
         args.version = self.version
+        args.write_state = self.write_state
 
         return args

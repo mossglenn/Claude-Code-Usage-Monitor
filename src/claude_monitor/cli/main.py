@@ -138,6 +138,7 @@ def _run_monitoring(args: argparse.Namespace) -> None:
 
         display_controller = DisplayController()
         display_controller.live_manager._console = console
+        display_controller.write_state_enabled = getattr(args, 'write_state', False)
 
         refresh_per_second: float = getattr(args, "refresh_per_second", 0.75)
         logger.info(
