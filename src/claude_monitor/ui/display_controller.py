@@ -337,13 +337,31 @@ class DisplayController:
             # burn_rate is a float (tokens per minute) from calculate_hourly_burn_rate()
             token_burn_rate = processed_data.get("burn_rate", 0.0)
 
-            # Calculate reset time
-            reset_hour = getattr(args, 'reset_hour', None) or 0
+            # Get reset time from processed_data (already calculated correctly)
+            reset_time = processed_data.get("reset_time")
+            if reset_time is None:
+                # This shouldn't happen, but provide a fallback
+                logger = logging.getLogger(__name__)
+                logger.warning("reset_time not found in processed_data, skipping state file write")
+                return
+
             current_time = datetime.now(pytz.UTC)
-            reset_time = current_time.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
-            if current_time.hour >= reset_hour:
-                reset_time += timedelta(days=1)
+
+            # Calculate seconds remaining until reset
             reset_seconds = int((reset_time - current_time).total_seconds())
+
+            # Convert reset time to user's timezone for formatted display
+            tz_handler = TimezoneHandler(default_tz="Europe/Warsaw")
+            timezone_to_use = (
+                args.timezone
+                if tz_handler.validate_timezone(args.timezone)
+                else "Europe/Warsaw"
+            )
+            reset_time_local = tz_handler.convert_to_timezone(reset_time, timezone_to_use)
+
+            # Format time based on user preference
+            time_format = get_time_format_preference(args)
+            formatted_time = format_display_time(reset_time_local, time_format, include_seconds=False)
 
             # Build state dictionary
             state = {
@@ -365,7 +383,7 @@ class DisplayController:
                 'reset': {
                     'timestamp': reset_time.isoformat(),
                     'secondsRemaining': reset_seconds,
-                    'formattedTime': reset_time.strftime('%I:%M %p')
+                    'formattedTime': formatted_time
                 },
                 'burnRate': {
                     'tokens': round(token_burn_rate, 2),
@@ -471,6 +489,7 @@ class DisplayController:
             "show_exceed_notification": notifications["show_exceed_notification"],
             "show_tokens_will_run_out": notifications["show_cost_will_exceed"],
             "original_limit": original_limit,
+            "reset_time": time_data["reset_time"],  # Add reset_time for state file
         }
 
     def _calculate_model_distribution(
