@@ -55,6 +55,7 @@ class TestLastUsedParams:
                 "reset_hour": 12,
                 "custom_limit_tokens": 1000,
                 "view": "realtime",
+                "write_state": False,
             },
         )()
 
@@ -92,6 +93,7 @@ class TestLastUsedParams:
                 "reset_hour": None,
                 "custom_limit_tokens": None,
                 "view": "realtime",
+                "write_state": False,
             },
         )()
 
@@ -121,6 +123,7 @@ class TestLastUsedParams:
                 "reset_hour": 12,
                 "custom_limit_tokens": None,
                 "view": "realtime",
+                "write_state": False,
             },
         )()
 
@@ -666,3 +669,168 @@ class TestSettingsIntegration:
 
         # Should only return init_settings
         assert sources == ("init_settings",)
+
+
+class TestWriteStateField:
+    """Test suite for write_state field in Settings class."""
+
+    def test_write_state_field_exists(self) -> None:
+        """Test that write_state field exists in Settings model."""
+        settings = Settings(_cli_parse_args=[])
+        assert hasattr(settings, "write_state")
+
+    def test_write_state_defaults_to_false(self) -> None:
+        """Test that write_state defaults to False."""
+        settings = Settings(_cli_parse_args=[])
+        assert settings.write_state is False
+
+    def test_write_state_can_be_set_to_true(self) -> None:
+        """Test that write_state can be explicitly set to True."""
+        settings = Settings(write_state=True, _cli_parse_args=[])
+        assert settings.write_state is True
+
+    def test_write_state_can_be_set_to_false(self) -> None:
+        """Test that write_state can be explicitly set to False."""
+        settings = Settings(write_state=False, _cli_parse_args=[])
+        assert settings.write_state is False
+
+    def test_write_state_accepts_boolean_only(self) -> None:
+        """Test that write_state accepts boolean values."""
+        # Pydantic should coerce truthy/falsy values to bool
+        settings_true = Settings(write_state=True, _cli_parse_args=[])
+        assert settings_true.write_state is True
+
+        settings_false = Settings(write_state=False, _cli_parse_args=[])
+        assert settings_false.write_state is False
+
+    def test_write_state_in_to_namespace(self) -> None:
+        """Test that write_state is included in to_namespace() output."""
+        settings = Settings(write_state=True, _cli_parse_args=[])
+        namespace = settings.to_namespace()
+
+        assert hasattr(namespace, "write_state")
+        assert namespace.write_state is True
+
+    def test_write_state_in_to_namespace_default(self) -> None:
+        """Test that write_state default value is in to_namespace() output."""
+        settings = Settings(_cli_parse_args=[])
+        namespace = settings.to_namespace()
+
+        assert hasattr(namespace, "write_state")
+        assert namespace.write_state is False
+
+    def test_write_state_has_description(self) -> None:
+        """Test that write_state field has a description."""
+        field_info = Settings.model_fields.get("write_state")
+        assert field_info is not None
+        assert field_info.description is not None
+        assert len(field_info.description) > 0
+        assert "state" in field_info.description.lower()
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_write_state_saved_to_last_used(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """Test that write_state is saved to last_used.json."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+
+            with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+                real_last_used = LastUsedParams(config_dir)
+                MockLastUsed.return_value = real_last_used
+
+                # Create settings with write_state=True
+                mock_settings = type(
+                    "MockSettings",
+                    (),
+                    {
+                        "plan": "pro",
+                        "theme": "dark",
+                        "timezone": "UTC",
+                        "time_format": "24h",
+                        "refresh_rate": 5,
+                        "reset_hour": 12,
+                        "custom_limit_tokens": None,
+                        "view": "realtime",
+                        "write_state": True,
+                    },
+                )()
+
+                real_last_used.save(mock_settings)
+
+                # Verify write_state was saved
+                assert real_last_used.params_file.exists()
+
+                with open(real_last_used.params_file) as f:
+                    data = json.load(f)
+
+                assert "write_state" in data
+                assert data["write_state"] is True
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_write_state_loaded_from_last_used(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """Test that write_state is loaded from last_used.json."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_dir = Path(temp_dir)
+            params_file = config_dir / "last_used.json"
+            params_file.parent.mkdir(parents=True, exist_ok=True)
+
+            # Create last_used.json with write_state=True
+            test_data: Dict[str, Union[str, int, bool]] = {
+                "theme": "dark",
+                "timezone": "UTC",
+                "time_format": "24h",
+                "refresh_rate": 10,
+                "view": "realtime",
+                "write_state": True,
+            }
+
+            with open(params_file, "w") as f:
+                json.dump(test_data, f)
+
+            with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+                mock_instance = Mock()
+                mock_instance.load.return_value = test_data
+                MockLastUsed.return_value = mock_instance
+
+                settings = Settings.load_with_last_used([])
+
+                # write_state should be loaded from last_used
+                assert settings.write_state is True
+
+    @patch("claude_monitor.core.settings.Settings._get_system_timezone")
+    @patch("claude_monitor.core.settings.Settings._get_system_time_format")
+    def test_write_state_cli_flag_overrides_last_used(
+        self, mock_time_format: Mock, mock_timezone: Mock
+    ) -> None:
+        """Test that CLI --write-state flag takes priority over last_used."""
+        mock_timezone.return_value = "UTC"
+        mock_time_format.return_value = "24h"
+
+        # Mock last used params with write_state=False
+        test_params: Dict[str, Union[str, int, bool]] = {
+            "theme": "dark",
+            "timezone": "UTC",
+            "write_state": False,
+            "view": "realtime",
+        }
+
+        with patch("claude_monitor.core.settings.LastUsedParams") as MockLastUsed:
+            mock_instance = Mock()
+            mock_instance.load.return_value = test_params
+            MockLastUsed.return_value = mock_instance
+
+            # CLI flag should override
+            settings = Settings.load_with_last_used(["--write-state"])
+
+            assert settings.write_state is True

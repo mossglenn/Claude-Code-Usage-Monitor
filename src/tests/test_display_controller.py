@@ -989,3 +989,385 @@ def test_create_screen_renderable_legacy(mock_manager_class):
     assert result == "rendered"
     mock_manager_class.assert_called_once()
     mock_manager.create_screen_renderable.assert_called_once_with(screen_buffer)
+
+
+class TestWriteStateIntegration:
+    """Integration tests for write_state_file feature in DisplayController."""
+
+    @pytest.fixture
+    def controller(self) -> Any:
+        """Create a DisplayController instance."""
+        with patch("claude_monitor.ui.display_controller.NotificationManager"):
+            return DisplayController()
+
+    @pytest.fixture
+    def sample_args(self) -> Mock:
+        """Sample CLI arguments with write_state enabled."""
+        args = Mock()
+        args.plan = "pro"
+        args.timezone = "UTC"
+        args.time_format = "24h"
+        args.custom_limit_tokens = None
+        return args
+
+    @pytest.fixture
+    def sample_processed_data(self) -> Dict[str, Any]:
+        """Sample processed data for testing."""
+        reset_time = datetime.now(timezone.utc) + timedelta(hours=2)
+        return {
+            "tokens_used": 15000,
+            "token_limit": 200000,
+            "usage_percentage": 7.5,
+            "session_cost": 0.45,
+            "cost_limit_p90": 5.0,
+            "sent_messages": 12,
+            "messages_limit_p90": 100,
+            "burn_rate": 150.5,
+            "reset_time": reset_time,
+        }
+
+    def test_write_state_enabled_default_false(self, controller: Any) -> None:
+        """Test that write_state_enabled defaults to False."""
+        assert controller.write_state_enabled is False
+
+    def test_write_state_enabled_can_be_set_true(self, controller: Any) -> None:
+        """Test that write_state_enabled can be set to True."""
+        controller.write_state_enabled = True
+        assert controller.write_state_enabled is True
+
+    def test_write_state_file_not_called_when_disabled(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file is NOT called when write_state_enabled is False."""
+        controller.write_state_enabled = False
+
+        data = {
+            "blocks": [
+                {
+                    "isActive": True,
+                    "totalTokens": 15000,
+                    "costUSD": 0.45,
+                    "sentMessagesCount": 12,
+                    "perModelStats": {},
+                    "entries": [{"timestamp": "2024-01-01T12:00:00Z"}],
+                    "startTime": "2024-01-01T11:00:00Z",
+                    "endTime": "2024-01-01T13:00:00Z",
+                }
+            ]
+        }
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            with patch.object(
+                controller, "_process_active_session_data"
+            ) as mock_process:
+                mock_process.return_value = {
+                    "tokens_used": 15000,
+                    "token_limit": 200000,
+                }
+                with patch.object(
+                    controller.session_display, "format_active_session_screen"
+                ) as mock_format:
+                    mock_format.return_value = ["screen"]
+                    with patch.object(
+                        controller.buffer_manager, "create_screen_renderable"
+                    ):
+                        controller.create_data_display(data, sample_args, 200000)
+
+                        mock_write.assert_not_called()
+
+    def test_write_state_file_called_when_enabled(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file IS called when write_state_enabled is True."""
+        controller.write_state_enabled = True
+
+        data = {
+            "blocks": [
+                {
+                    "isActive": True,
+                    "totalTokens": 15000,
+                    "costUSD": 0.45,
+                    "sentMessagesCount": 12,
+                    "perModelStats": {},
+                    "entries": [{"timestamp": "2024-01-01T12:00:00Z"}],
+                    "startTime": "2024-01-01T11:00:00Z",
+                    "endTime": "2024-01-01T13:00:00Z",
+                }
+            ]
+        }
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            with patch.object(
+                controller, "_process_active_session_data"
+            ) as mock_process:
+                mock_process.return_value = {
+                    "tokens_used": 15000,
+                    "token_limit": 200000,
+                }
+                with patch.object(
+                    controller.session_display, "format_active_session_screen"
+                ) as mock_format:
+                    mock_format.return_value = ["screen"]
+                    with patch.object(
+                        controller.buffer_manager, "create_screen_renderable"
+                    ):
+                        controller.create_data_display(data, sample_args, 200000)
+
+                        mock_write.assert_called_once()
+
+    def test_write_state_file_receives_processed_data(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file receives the processed_data dict."""
+        controller.write_state_enabled = True
+
+        data = {
+            "blocks": [
+                {
+                    "isActive": True,
+                    "totalTokens": 15000,
+                    "costUSD": 0.45,
+                    "sentMessagesCount": 12,
+                    "perModelStats": {},
+                    "entries": [{"timestamp": "2024-01-01T12:00:00Z"}],
+                    "startTime": "2024-01-01T11:00:00Z",
+                    "endTime": "2024-01-01T13:00:00Z",
+                }
+            ]
+        }
+
+        expected_processed_data = {
+            "tokens_used": 15000,
+            "token_limit": 200000,
+            "reset_time": datetime.now(timezone.utc),
+        }
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            with patch.object(
+                controller, "_process_active_session_data"
+            ) as mock_process:
+                mock_process.return_value = expected_processed_data
+                with patch.object(
+                    controller.session_display, "format_active_session_screen"
+                ) as mock_format:
+                    mock_format.return_value = ["screen"]
+                    with patch.object(
+                        controller.buffer_manager, "create_screen_renderable"
+                    ):
+                        controller.create_data_display(data, sample_args, 200000)
+
+                        mock_write.assert_called_once_with(
+                            expected_processed_data, sample_args
+                        )
+
+    def test_write_state_file_not_called_on_error(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file is NOT called when processing fails."""
+        controller.write_state_enabled = True
+
+        data = {
+            "blocks": [
+                {
+                    "isActive": True,
+                    "totalTokens": 15000,
+                    "costUSD": 0.45,
+                }
+            ]
+        }
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            with patch.object(
+                controller, "_process_active_session_data"
+            ) as mock_process:
+                mock_process.side_effect = Exception("Processing error")
+                with patch.object(
+                    controller.error_display, "format_error_screen"
+                ) as mock_error:
+                    mock_error.return_value = ["error"]
+                    with patch.object(
+                        controller.buffer_manager, "create_screen_renderable"
+                    ):
+                        controller.create_data_display(data, sample_args, 200000)
+
+                        # Should NOT call write_state_file when there's an error
+                        mock_write.assert_not_called()
+
+    def test_write_state_file_not_called_for_no_active_session(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file is NOT called when no active session."""
+        controller.write_state_enabled = True
+
+        # No active blocks
+        data = {"blocks": [{"isActive": False, "totalTokens": 1000}]}
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            controller.create_data_display(data, sample_args, 200000)
+
+            mock_write.assert_not_called()
+
+    def test_write_state_file_not_called_for_empty_data(
+        self, controller: Any, sample_args: Mock
+    ) -> None:
+        """Test that _write_state_file is NOT called for empty data."""
+        controller.write_state_enabled = True
+
+        with patch.object(controller, "_write_state_file") as mock_write:
+            controller.create_data_display({}, sample_args, 200000)
+
+            mock_write.assert_not_called()
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_writes_to_correct_location(
+        self,
+        controller: Any,
+        sample_args: Mock,
+        sample_processed_data: Dict[str, Any],
+    ) -> None:
+        """Test that _write_state_file writes to the correct location."""
+        from pathlib import Path
+
+        written_content = None
+        written_path = None
+
+        def capture_write(self: Path, content: str) -> None:
+            nonlocal written_content, written_path
+            written_content = content
+            written_path = str(self)
+
+        with patch.object(Path, "write_text", capture_write):
+            controller._write_state_file(sample_processed_data, sample_args)
+
+        assert written_content is not None
+        assert written_path == "/tmp/test-reports/current.json"
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_includes_reset_time_from_processed_data(
+        self,
+        controller: Any,
+        sample_args: Mock,
+        sample_processed_data: Dict[str, Any],
+    ) -> None:
+        """Test that _write_state_file uses reset_time from processed_data (regression test for 06e880f)."""
+        import json
+        from pathlib import Path
+
+        written_content = None
+
+        def capture_write(content: str) -> None:
+            nonlocal written_content
+            written_content = content
+
+        with patch.object(Path, "write_text", side_effect=capture_write):
+            controller._write_state_file(sample_processed_data, sample_args)
+
+        assert written_content is not None
+        state = json.loads(written_content)
+
+        # The timestamp should match the reset_time from processed_data
+        expected_timestamp = sample_processed_data["reset_time"].isoformat()
+        assert state["reset"]["timestamp"] == expected_timestamp
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_logs_warning_when_reset_time_missing(
+        self,
+        controller: Any,
+        sample_args: Mock,
+    ) -> None:
+        """Test that _write_state_file logs warning when reset_time is None."""
+        processed_data_no_reset = {
+            "tokens_used": 15000,
+            "token_limit": 200000,
+            "reset_time": None,
+        }
+
+        with patch("logging.getLogger") as mock_get_logger:
+            mock_logger = Mock()
+            mock_get_logger.return_value = mock_logger
+
+            controller._write_state_file(processed_data_no_reset, sample_args)
+
+            mock_logger.warning.assert_called_once()
+            assert "reset_time" in mock_logger.warning.call_args[0][0]
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_handles_permission_error_gracefully(
+        self,
+        controller: Any,
+        sample_args: Mock,
+        sample_processed_data: Dict[str, Any],
+    ) -> None:
+        """Test that _write_state_file handles permission errors gracefully."""
+        from pathlib import Path
+
+        with patch.object(
+            Path, "write_text", side_effect=PermissionError("Access denied")
+        ):
+            with patch("logging.getLogger") as mock_get_logger:
+                mock_logger = Mock()
+                mock_get_logger.return_value = mock_logger
+
+                # Should not raise exception
+                controller._write_state_file(sample_processed_data, sample_args)
+
+                # Should log error
+                mock_logger.error.assert_called_once()
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_burn_rate_is_float(
+        self,
+        controller: Any,
+        sample_args: Mock,
+        sample_processed_data: Dict[str, Any],
+    ) -> None:
+        """Test that burn_rate in state file is float (regression test for d8933e5)."""
+        import json
+        from pathlib import Path
+
+        written_content = None
+
+        def capture_write(content: str) -> None:
+            nonlocal written_content
+            written_content = content
+
+        with patch.object(Path, "write_text", side_effect=capture_write):
+            controller._write_state_file(sample_processed_data, sample_args)
+
+        assert written_content is not None
+        state = json.loads(written_content)
+
+        assert isinstance(state["burnRate"]["tokens"], float)
+
+    @patch.dict("os.environ", {"CLAUDE_MONITOR_REPORT_DIR": "/tmp/test-reports"})
+    def test_write_state_file_with_different_timezones(
+        self,
+        controller: Any,
+        sample_processed_data: Dict[str, Any],
+    ) -> None:
+        """Test _write_state_file respects timezone setting."""
+        import json
+        from pathlib import Path
+
+        args_ny = Mock()
+        args_ny.timezone = "America/New_York"
+        args_ny.time_format = "12h"
+
+        written_content = None
+
+        def capture_write(content: str) -> None:
+            nonlocal written_content
+            written_content = content
+
+        with patch.object(Path, "write_text", side_effect=capture_write):
+            controller._write_state_file(sample_processed_data, args_ny)
+
+        assert written_content is not None
+        state = json.loads(written_content)
+
+        # Formatted time should reflect timezone conversion
+        # (not an exact match due to DST, but should have AM/PM for 12h format)
+        assert (
+            "AM" in state["reset"]["formattedTime"]
+            or "PM" in state["reset"]["formattedTime"]
+        )
