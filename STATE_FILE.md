@@ -373,7 +373,8 @@ Default: `~/.claude-monitor/reports/`
 ### Update Mechanism
 
 1. **Data Flow**:
-   ```
+
+   ```text
    MonitoringOrchestrator (every --refresh-rate seconds)
    → on_data_update callback
    → DisplayController.create_data_display()
@@ -384,8 +385,8 @@ Default: `~/.claude-monitor/reports/`
    - File is NOT updated if no Claude activity detected
    - Check `lastUpdate` to determine if session is active
 
-3. **Atomic writes**: File is written atomically using `Path.write_text()`
-   - No partial writes under normal conditions
+3. **File writes**: File is written using `Path.write_text()`
+   - Typically completes without partial writes under normal conditions
    - No file locking required for readers
 
 ### Data Sources

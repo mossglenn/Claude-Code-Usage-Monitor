@@ -316,11 +316,6 @@ class DisplayController:
             args: Command line arguments
         """
         try:
-            import json
-            import os
-            from datetime import timedelta
-            from pathlib import Path as PathLib
-
             # Extract values from processed_data
             tokens_used = processed_data.get("tokens_used", 0)
             token_limit = processed_data.get("token_limit", 0)
@@ -393,7 +388,11 @@ class DisplayController:
             }
 
             # Write to file
-            state_file = PathLib(os.environ["CLAUDE_MONITOR_REPORT_DIR"]) / 'current.json'
+            report_dir = os.environ.get(
+                "CLAUDE_MONITOR_REPORT_DIR",
+                str(Path.home() / ".claude-monitor" / "reports")
+            )
+            state_file = Path(report_dir) / 'current.json'
             state_file.write_text(json.dumps(state, indent=2))
 
         except Exception as e:

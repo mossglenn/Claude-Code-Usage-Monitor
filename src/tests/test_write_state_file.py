@@ -79,19 +79,10 @@ class TestWriteStateFile:
         sample_processed_data: Dict[str, Any],
         sample_args: Mock,
     ) -> None:
-        """Test state file is NOT created when write_state_enabled is False."""
-        with patch("claude_monitor.ui.display_controller.NotificationManager"):
-            controller = DisplayController()
-            controller.write_state_enabled = False
-
-        with patch.dict(
-            os.environ, {"CLAUDE_MONITOR_REPORT_DIR": str(temp_report_dir)}
-        ):
-            # This should not create the file
-            # Note: The method won't even be called if write_state_enabled is False
-            # in the actual implementation, but we test the flag here
-            state_file = temp_report_dir / "current.json"
-            assert not state_file.exists()
+        """Test _write_state_file is not invoked via create_data_display when disabled."""
+        # This behavior is already tested in test_display_controller.py
+        # TestWriteStateIntegration.test_write_state_file_not_called_when_disabled
+        pytest.skip("Covered by test_display_controller.py integration tests")
 
     def test_state_file_location_correct(
         self,
@@ -265,18 +256,17 @@ class TestWriteStateFile:
             assert state_file.exists()
             assert os.access(state_file, os.R_OK)
 
-    def test_state_file_written_atomically(
+    def test_state_file_written_completely(
         self,
         controller: DisplayController,
         temp_report_dir: Path,
         sample_processed_data: Dict[str, Any],
         sample_args: Mock,
     ) -> None:
-        """Test file is written atomically (using Path.write_text)."""
+        """Test file is written completely and is valid JSON."""
         with patch.dict(
             os.environ, {"CLAUDE_MONITOR_REPORT_DIR": str(temp_report_dir)}
         ):
-            # The implementation uses Path.write_text which is atomic
             controller._write_state_file(sample_processed_data, sample_args)
 
             state_file = temp_report_dir / "current.json"
@@ -296,7 +286,7 @@ class TestWriteStateFile:
         sample_processed_data: Dict[str, Any],
         sample_args: Mock,
     ) -> None:
-        """Test token percentage calculated correctly: (used/limit)*100."""
+        """Test token percentage is written correctly from processed_data."""
         sample_processed_data["tokens_used"] = 15000
         sample_processed_data["token_limit"] = 50000
 
@@ -519,7 +509,7 @@ class TestWriteStateFile:
 
             # Should be parseable as ISO 8601
             timestamp = data["reset"]["timestamp"]
-            parsed = datetime.fromisoformat(timestamp.replace("+00:00", "+00:00"))
+            parsed = datetime.fromisoformat(timestamp)
             assert parsed.tzinfo is not None
 
     def test_last_update_is_recent(
@@ -582,9 +572,10 @@ class TestWriteStateFile:
                 data = json.load(f)
 
             # Check that percentages have at most 2 decimal places
-            assert len(str(data["tokens"]["percent"]).split(".")[-1]) <= 2
-            assert len(str(data["cost"]["percent"]).split(".")[-1]) <= 2
-            assert len(str(data["messages"]["percent"]).split(".")[-1]) <= 2
+            # Verify rounding by checking value equals its 2-decimal rounded version
+            assert data["tokens"]["percent"] == round(data["tokens"]["percent"], 2)
+            assert data["cost"]["percent"] == round(data["cost"]["percent"], 2)
+            assert data["messages"]["percent"] == round(data["messages"]["percent"], 2)
 
     # ========================================================================
     # C. RESET TIME CALCULATION TESTS (8 tests) - Critical for 06e880f fix
@@ -671,33 +662,35 @@ class TestWriteStateFile:
         sample_args: Mock,
     ) -> None:
         """Test secondsRemaining decreases over time."""
-        reset_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        base_time = datetime.now(timezone.utc)
+        reset_time = base_time + timedelta(hours=1)
         sample_processed_data["reset_time"] = reset_time
 
         with patch.dict(
             os.environ, {"CLAUDE_MONITOR_REPORT_DIR": str(temp_report_dir)}
         ):
-            # First write
-            controller._write_state_file(sample_processed_data, sample_args)
+            # First write at base_time
+            with patch("claude_monitor.ui.display_controller.datetime") as mock_datetime:
+                mock_datetime.now.return_value = base_time
+                mock_datetime.fromisoformat = datetime.fromisoformat
+                controller._write_state_file(sample_processed_data, sample_args)
 
             state_file = temp_report_dir / "current.json"
             with open(state_file) as f:
                 data1 = json.load(f)
 
-            # Wait a bit and write again
-            import time
-
-            time.sleep(1)
-
-            controller._write_state_file(sample_processed_data, sample_args)
+            # Second write 2 seconds later (simulated)
+            with patch("claude_monitor.ui.display_controller.datetime") as mock_datetime:
+                mock_datetime.now.return_value = base_time + timedelta(seconds=2)
+                mock_datetime.fromisoformat = datetime.fromisoformat
+                controller._write_state_file(sample_processed_data, sample_args)
 
             with open(state_file) as f:
                 data2 = json.load(f)
 
             # Second write should have fewer seconds remaining
-            assert (
-                data2["reset"]["secondsRemaining"] <= data1["reset"]["secondsRemaining"]
-            )
+            assert data2["reset"]["secondsRemaining"] < data1["reset"]["secondsRemaining"]
+            assert data1["reset"]["secondsRemaining"] - data2["reset"]["secondsRemaining"] == 2
 
     def test_reset_time_timezone_conversion_europe_warsaw(
         self,
@@ -722,9 +715,9 @@ class TestWriteStateFile:
                 data = json.load(f)
 
             # 23:00 UTC = 00:00 next day Warsaw time
-            # Could be either depending on DST
+            # January = UTC+1, no DST
             formatted = data["reset"]["formattedTime"]
-            assert "00:00" in formatted or "23:00" in formatted
+            assert "00:00" in formatted
 
     def test_reset_time_timezone_conversion_us_pacific(
         self,
@@ -1154,8 +1147,8 @@ class TestWriteStateFile:
                 except Exception:
                     pass
 
-                # Logger should have been called for error
-                # (either in exception handler or for warnings)
+                # Verify logger.error was called
+                mock_log_instance.error.assert_called_once()
 
         # Restore permissions
         temp_report_dir.chmod(0o755)
