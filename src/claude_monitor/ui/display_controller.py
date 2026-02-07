@@ -389,7 +389,7 @@ class DisplayController:
                     'tokens': round(token_burn_rate, 2),
                     'messages': 0
                 },
-                'lastUpdate': datetime.now().isoformat()
+                'lastUpdate': datetime.now(timezone.utc).isoformat()
             }
 
             # Write to file

@@ -531,15 +531,15 @@ class TestWriteStateFile:
     ) -> None:
         """Test lastUpdate is recent (within test execution time)."""
         before_time = (
-            datetime.now()
-        )  # Use local time since write_state_file uses datetime.now()
+            datetime.now(timezone.utc)
+        )  # Use UTC time since write_state_file uses datetime.now(timezone.utc)
 
         with patch.dict(
             os.environ, {"CLAUDE_MONITOR_REPORT_DIR": str(temp_report_dir)}
         ):
             controller._write_state_file(sample_processed_data, sample_args)
 
-        after_time = datetime.now()  # Use local time
+        after_time = datetime.now(timezone.utc)  # Use UTC time
 
         state_file = temp_report_dir / "current.json"
         with open(state_file) as f:

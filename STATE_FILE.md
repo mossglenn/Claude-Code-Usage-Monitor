@@ -325,7 +325,7 @@ if (state) {
 
 3. **Reset time is timezone-aware**
    - `timestamp` is always UTC
-   - `formattedTime` uses user's `--timezone` setting (default: America/New_York)
+   - `formattedTime` uses user's `--timezone` setting (default: Europe/Warsaw)
 
 4. **Burn rate reflects last hour**
    - May be 0 if no activity in last 60 minutes
@@ -394,7 +394,7 @@ Default: `~/.claude-monitor/reports/`
 - **Limits**:
   - Standard plans: Fixed values from `core/plans.py`
   - Custom plans: P90 calculated from historical usage via `P90Calculator`
-- **Reset time**: Based on `--reset-hour` setting (default: 0 = midnight UTC)
+- **Reset time**: Extracted from session `end_time_str` in processed_data (not from `--reset-hour` setting)
 - **Burn rate**: Calculated by `calculate_hourly_burn_rate()` from last hour of activity
 
 ### File Format
